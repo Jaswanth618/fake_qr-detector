@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0a1020" />
+    <title>ScanSure — QR Safety Check</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+    <style>.zoom-control{display:flex;align-items:center;justify-content:center;gap:9px;margin:-5px 0 15px;color:#aebdd0;font:600 14px Manrope;flex-wrap:wrap}.zoom-control input{width:135px;accent-color:#bbf246;cursor:pointer}.zoom-control button{width:25px;height:25px;border:1px solid #31415d;border-radius:50%;background:#17233a;color:#dce8f5;cursor:pointer;font-size:17px;line-height:1}.zoom-control .adaptive-btn{width:auto;height:26px;padding:0 10px;border-radius:13px;font:700 11px Manrope;border:1px solid #31415d;background:#17233a;color:#9aa9bd;cursor:pointer;transition:all 0.2s}.zoom-control .adaptive-btn.active{background:rgba(187,242,70,.18);color:#bbf246;border-color:rgba(187,242,70,.5)}.intel-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:15px}.intel-card{border:1px solid rgba(255,255,255,.08);background:#0b1323;border-radius:10px;padding:13px}.intel-card h3{margin:0 0 7px;font-size:12px;color:#dce8f5}.intel-card p{margin:0;color:#9aa9bd;font-size:12px;line-height:1.5}.intel-card select,.intel-card button{margin-top:10px;background:#18263f;border:1px solid #30405b;border-radius:6px;padding:7px;color:#e2ebf5;font:600 11px Manrope;cursor:pointer}.emergency{margin-top:15px;padding:13px;border:1px solid rgba(255,129,120,.42);border-radius:10px;background:rgba(255,129,120,.09);color:#ffd4d0;font-size:12px;line-height:1.55}.emergency strong{color:#ff9b94;display:block;margin-bottom:3px}.history{margin-top:26px}.history-head{display:flex;justify-content:space-between;align-items:center}.history-head h2{font-size:16px;margin:0}.history-head button{border:0;background:transparent;color:#9fafc2;font:600 11px Manrope;cursor:pointer}.history-list{margin:10px 0 0;padding:0;list-style:none}.history-list li{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.07);font:11px 'DM Mono';color:#c7d3e1}.history-list small{color:#8090a5;white-space:nowrap}.community-count{color:#bbf246;font-family:'DM Mono';font-size:11px}@media(max-width:600px){.intel-grid{grid-template-columns:1fr}}</style>
+  </head>
+  <body>
+    <main class="shell">
+      <nav>
+        <a class="brand" href="#"><span class="brand-mark">S</span> ScanSure</a>
+        <span class="nav-status"><i></i> Protection active</span>
+      </nav>
+
+      <section class="hero">
+        <div class="eyebrow"><span>✦</span> QR code safety, before you click</div>
+        <h1>Know where a<br /><em>QR code</em> leads.</h1>
+        <p>Scan any QR code and we’ll show the destination, check it for phishing signals, and help you decide if it’s safe to open.</p>
+      </section>
+
+      <section class="scanner-card" aria-label="QR code scanner">
+        <div class="scanner-top">
+          <div>
+            <span class="section-label">Scanner</span>
+            <h2>Check a QR code</h2>
+          </div>
+          <span class="privacy"><span>◉</span> Nothing is opened automatically</span>
+        </div>
+
+        <div class="scan-stage" id="scanStage" tabindex="0" role="button" aria-label="Drop a QR image here or press Enter to choose an image">
+          <video id="video" playsinline muted></video>
+          <div class="placeholder" id="placeholder">
+            <div class="scan-icon"><span></span><span></span><span></span><span></span><b>⌁</b></div>
+            <strong>Ready to scan</strong>
+            <small>Point your camera at any QR code to scan</small>
+          </div>
+          <div class="scan-frame" aria-hidden="true"></div>
+        </div>
+        <div class="zoom-control hidden" id="zoomControl">
+          <button id="zoomOut" type="button" aria-label="Zoom out">−</button><input id="zoomSlider" type="range" min="1" max="3" value="1" step="0.1" aria-label="Camera zoom" /><button id="zoomIn" type="button" aria-label="Zoom in">+</button>
+          <button id="adaptiveZoomBtn" class="adaptive-btn active" type="button" title="Toggle Adaptive Auto-Zoom">✦ Auto Zoom</button>
+        </div>
+
+        <div class="controls">
+          <button class="button primary" id="cameraBtn"><span>⌁</span> Scan with camera</button>
+          <label class="button secondary" for="fileInput"><span>↥</span> Upload QR image</label>
+          <input id="fileInput" type="file" accept="image/*" hidden />
+        </div>
+        <p class="camera-note" id="cameraNote">Drop an image in the scan box or use your camera. Your files stay private on this device.</p>
+
+        <div class="manual-row">
+          <span>Or paste a link</span>
+          <input id="manualUrl" type="text" placeholder="Paste a URL to check safety" aria-label="Paste a link" />
+          <button id="checkBtn">Check link</button>
+        </div>
+      </section>
+
+      <section class="result-card hidden" id="resultCard" aria-live="polite">
+        <div class="verdict-row">
+          <div class="verdict-icon" id="verdictIcon">✓</div>
+          <div><span class="section-label" id="verdictLabel">Safety check complete</span><h2 id="verdictTitle">This link looks safe</h2></div>
+          <span class="score" id="score">92 <small>/ 100</small></span>
+        </div>
+        <div class="destination">
+          <span>Destination</span>
+          <code id="destinationText"></code>
+          <button id="copyBtn" title="Copy destination">⧉</button>
+        </div>
+        <ul class="checks" id="checks"></ul>
+        <div class="emergency hidden" id="emergency"><strong>Stop before you pay or share an OTP.</strong>Do not enter passwords, bank details, UPI PINs, or verification codes until you independently confirm the sender and website.</div>
+        <div class="intel-grid">
+          <div class="intel-card"><h3>Safety explainer</h3><p id="explainerText"></p><select id="language" aria-label="Explainer language"><option value="en">English</option><option value="hi">Hindi</option><option value="ta">Tamil</option></select></div>
+          <div class="intel-card"><h3>Safe preview</h3><p id="previewText"></p><button id="previewBtn">Refresh preview</button></div>
+          <div class="intel-card"><h3>Community reports</h3><p><span class="community-count" id="reportCount">0 reports</span><br />Reports are stored only on this device for this demo.</p><button id="reportBtn">Report as scam</button></div>
+          <div class="intel-card"><h3>Domain check</h3><p id="lookalikeText"></p></div>
+        </div>
+        <div class="result-actions">
+          <button class="button secondary" id="scanAnother">Scan another</button>
+          <button class="button primary" id="openBtn">Open link <span>↗</span></button>
+        </div>
+      </section>
+
+      <section class="history">
+        <div class="history-head"><h2>Recent safety checks</h2><button id="clearHistory">Clear history</button></div>
+        <ul class="history-list" id="historyList"></ul>
+      </section>
+
+      <section class="how-it-works">
+        <div><span class="step">01</span><h3>Scan</h3><p>Point your camera at any QR code.</p></div>
+        <div><span class="step">02</span><h3>Inspect</h3><p>See the full destination before opening it.</p></div>
+        <div><span class="step">03</span><h3>Decide</h3><p>Get a clear warning when something looks off.</p></div>
+      </section>
+    </main>
+    <div class="toast" id="toast">Link copied</div>
+    <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,6 @@
+.chrome-preview/
+.edge-preview/
+.qr-lib/
+.agents/
+__pycache__/
+*.log
