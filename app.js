@@ -10,7 +10,7 @@ const scanCtx = scanCanvas.getContext('2d', { willReadFrequently: true });
 
 function normalise(value) {
   value = value.trim();
-  if (!/^https?:\/\//i.test(value)) value = 'https://' + value;
+  if (!/^[a-zA-Z][a-zA-Z\d+\-.]*:/i.test(value)) value = 'https://' + value;
   try { return new URL(value); } catch { return null; }
 }
 
@@ -22,6 +22,34 @@ function inspect(value) {
   const flags = [];
 
   const trustedBrands = ['paytm','phonepe','googlepay','gpay','amazon','flipkart','microsoft','apple','whatsapp','instagram','facebook','netflix'];
+
+  // Handle custom protocols
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    flags.push(`This link uses a custom protocol (${url.protocol}) which may try to launch an external app.`);
+    if (/^(upi|ethereum|bitcoin|sms|tel|mailto):/i.test(url.protocol)) {
+      flags.push('This looks like a payment or direct action link. Never approve unexpected payment requests.');
+    }
+
+    // Custom protocols may not have a standard hostname structure
+    if (!host) {
+      const risk = Math.min(96, flags.length * 24 + 12);
+      currentRisk = risk; currentFlags = flags; currentHost = 'Custom Protocol';
+      const safe = risk < 25;
+      $('#verdictTitle').textContent = safe ? 'This link looks safe' : risk < 55 ? 'Proceed with caution' : 'This link looks suspicious';
+      $('#verdictLabel').textContent = safe ? 'Safety check complete' : 'Potential warning';
+      $('#verdictIcon').textContent = safe ? '✓' : '!';
+      $('#verdictIcon').style.color = safe ? 'var(--lime)' : 'var(--coral)';
+      $('#verdictIcon').style.background = safe ? 'rgba(187,242,70,.15)' : 'rgba(255,129,120,.15)';
+      $('#score').innerHTML = `${100 - risk} <small>/ 100</small>`;
+      $('#score').style.color = safe ? 'var(--lime)' : 'var(--coral)';
+      $('#destinationText').textContent = url.href;
+      $('#checks').innerHTML = flags.map((c) => `<li class="warn">${c}</li>`).join('');
+      $('#emergency').classList.toggle('hidden', risk < 45);
+      updateExplainer(); updatePreview(); updateLookalike(null); updateReportCount(); saveHistory(url.href, risk);
+      result.classList.remove('hidden'); result.scrollIntoView({behavior:'smooth', block:'nearest'}); result.focus({preventScroll: true});
+      return;
+    }
+  }
 
   // 1. RFC 2606 & Dummy / Example / Mock Domains
   const dummyDomains = ['example.com', 'example.org', 'example.net', 'example.edu', 'test.com', 'fake.com', 'dummy.com', 'mock.com', 'sample.com', 'localhost', 'invalid'];
@@ -66,18 +94,92 @@ function inspect(value) {
   const hasIp = /^(\d{1,3}\.){3}\d{1,3}$/.test(host);
   if (hasIp) flags.push('The destination uses a raw IP address instead of a domain name.');
 
-  // 8. Lookalike & Brand Mention
-  if (host.includes('xn--')) flags.push('This domain may be using look-alike characters (Punycode).');
+  // 8. Lookalike & Brand Mention (Levenshtein distance)
+  function levenshtein(a, b) {
+    const matrix = [];
+    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+    for (let i = 1; i <= b.length; i++) {
+      for (let j = 1; j <= a.length; j++) {
+        if (b.charAt(i - 1) === a.charAt(j - 1)) {
+          matrix[i][j] = matrix[i - 1][j - 1];
+        } else {
+          matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1));
+        }
+      }
+    }
+    return matrix[b.length][a.length];
+  }
+
+  if (host.includes('xn--')) {
+    flags.push('This domain uses Punycode (starts with xn--), which is often used in homograph attacks to create look-alike domains with non-English characters.');
+  } else {
+    // Check for mixed scripts or suspicious unicode characters in the decoded domain
+    const hasSuspiciousUnicode = /[^\x00-\x7F]/.test(host);
+    if (hasSuspiciousUnicode) {
+      flags.push('This domain contains non-standard characters, which may be an attempt to visually spoof a legitimate domain (homograph attack).');
+    }
+  }
+
+  let detectedBrand = null;
+  const parts = host.split('.');
+
+  for (const part of parts) {
+    if (part.length < 4) continue; // Skip short parts
+
+    // Check exact match
+    const exactMatch = trustedBrands.find(b => part === b);
+    if (exactMatch) {
+      detectedBrand = exactMatch;
+      break;
+    }
+
+    // Check typosquatting (Levenshtein distance <= 2 for strings > 5 chars, <= 1 otherwise)
+    const fuzzyMatch = trustedBrands.find(b => {
+      if (Math.abs(part.length - b.length) > 2) return false;
+      const threshold = b.length > 5 ? 2 : 1;
+      return levenshtein(part, b) > 0 && levenshtein(part, b) <= threshold;
+    });
+
+    if (fuzzyMatch) {
+      flags.push(`This domain contains "${part}", which looks like a misspelling of the brand "${fuzzyMatch}". This is a common phishing technique called typosquatting.`);
+      detectedBrand = fuzzyMatch;
+      break; // Only flag one brand to avoid spam
+    }
+  }
+
   const brand = trustedBrands.find(name => host.includes(name));
   if (brand && host !== `${brand}.com` && !host.endsWith(`.${brand}.com`) && !host.endsWith(`.${brand}.in`)) {
     flags.push(`This domain mentions ${brand} but is not an official ${brand} domain.`);
+    if (!detectedBrand) detectedBrand = brand;
   }
 
-  // 9. Protocol Check
+  // 9. URL Parameter Analysis (Open Redirect Check)
+  for (const [key, paramValue] of url.searchParams) {
+    if (/^https?:\/\//i.test(paramValue)) {
+      flags.push(`A URL parameter ("${key}") contains another web address. This could be an open redirect trying to bounce you to a malicious site.`);
+      break;
+    }
+  }
+
+  // 10. Protocol Check
   if (url.protocol !== 'https:') flags.push('This site does not use an encrypted HTTPS connection.');
   if (url.href.length > 105) flags.push('The destination address is unusually long, which can hide its real purpose.');
 
-  const risk = Math.min(96, flags.length * 24 + (url.protocol !== 'https:' ? 12 : 0));
+  // High risk flags should automatically push risk to 45+
+  const isHighRisk = flags.some(f =>
+    f.includes('typosquatting') ||
+    f.includes('custom protocol') ||
+    f.includes('open redirect') ||
+    f.includes('raw IP address') ||
+    f.includes('dummy domain')
+  );
+
+  let risk = Math.min(96, flags.length * 24 + (url.protocol !== 'https:' ? 12 : 0));
+  if (isHighRisk && risk < 45) {
+      risk = 55; // Ensure it reaches "Proceed with caution" or worse
+  }
+
   currentRisk = risk; currentFlags = flags; currentHost = host;
   const safe = risk < 25;
   $('#verdictTitle').textContent = safe ? 'This link looks safe' : risk < 55 ? 'Proceed with caution' : 'This link looks suspicious';
@@ -91,8 +193,8 @@ function inspect(value) {
   const checks = flags.length ? flags : ['Uses an encrypted HTTPS connection.', 'No common phishing patterns were found in this address.', 'The destination was revealed before opening.'];
   $('#checks').innerHTML = checks.map((c, i) => `<li class="${flags.length ? 'warn' : ''}">${c}</li>`).join('');
   $('#emergency').classList.toggle('hidden', risk < 45);
-  updateExplainer(); updatePreview(); updateLookalike(brand); updateReportCount(); saveHistory(url.href, risk);
-  result.classList.remove('hidden'); result.scrollIntoView({behavior:'smooth', block:'nearest'});
+  updateExplainer(); updatePreview(); updateLookalike(detectedBrand); updateReportCount(); saveHistory(url.href, risk);
+  result.classList.remove('hidden'); result.scrollIntoView({behavior:'smooth', block:'nearest'}); result.focus({preventScroll: true});
 }
 
 let barcodeDetectorInstance = null;
